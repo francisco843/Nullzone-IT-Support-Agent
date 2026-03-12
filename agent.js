@@ -215,11 +215,23 @@ function buildWsUrl() {
   );
 }
 
+function buildWsOrigin() {
+  const base = PANEL_URL.replace(/\/$/, "");
+  try {
+    return new URL(base).origin;
+  } catch {
+    return base;
+  }
+}
+
 function connect() {
   if (isShuttingDown) return;
 
   console.log(`[${ts()}] Connecting to backend...`);
-  ws = new WebSocket(buildWsUrl(), { handshakeTimeout: 10_000 });
+  ws = new WebSocket(buildWsUrl(), {
+    handshakeTimeout: 10_000,
+    headers: { Origin: buildWsOrigin() },
+  });
 
   ws.on("open", () => {
     console.log(`[${ts()}] Connected  (agentId: ${AGENT_ID})`);
