@@ -23,6 +23,10 @@
 const fs   = require("fs");
 const path = require("path");
 const os   = require("os");
+const [NODE_MAJOR] = process.versions.node.split(".").map(Number);
+
+const MIN_NODE_MAJOR = 18;
+const MAX_NODE_MAJOR = 24;
 
 // ─── macOS guard ─────────────────────────────────────────────────────────────
 
@@ -40,6 +44,23 @@ if (process.platform !== "darwin") {
 try {
   require("dotenv").config({ path: path.join(__dirname, ".env") });
 } catch {}
+
+// ─── Runtime guard ────────────────────────────────────────────────────────────
+//
+// node-pty is native code and is sensitive to unsupported Node majors.
+// Fail fast with a clear error instead of surfacing a vague posix_spawnp error
+// only after the browser starts a shell.
+
+if (!Number.isInteger(NODE_MAJOR) || NODE_MAJOR < MIN_NODE_MAJOR || NODE_MAJOR > MAX_NODE_MAJOR) {
+  console.error(
+    "ERROR: Unsupported Node.js runtime for this agent.\n" +
+    `       Detected: v${process.versions.node}\n` +
+    `       Supported: >=${MIN_NODE_MAJOR} and <${MAX_NODE_MAJOR + 1}\n` +
+    "       Recommended: Node 22 LTS.\n" +
+    "       node-pty fails on this machine with the current Node version."
+  );
+  process.exit(1);
+}
 
 // ─── Required deps ────────────────────────────────────────────────────────────
 
@@ -188,7 +209,7 @@ function buildWsUrl() {
   const base   = PANEL_URL.replace(/\/$/, "");
   const wsBase = base.replace(/^https?:\/\//, (m) => m === "https://" ? "wss://" : "ws://");
   return (
-    `${wsBase}/ws/agent` +
+    `${wsBase}/api/ws/agent` +
     `?token=${encodeURIComponent(AGENT_TOKEN)}` +
     `&agentId=${encodeURIComponent(AGENT_ID)}`
   );
