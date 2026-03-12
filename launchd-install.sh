@@ -3,13 +3,13 @@
 # launchd-install.sh — Install the Remote Shell Agent as a macOS LaunchAgent
 #
 # What this does:
-#   1. Detects the full path to the `node` binary (homebrew Intel/ARM, nvm, system)
+#   1. Detects the full path to a supported `node` binary (prefers Homebrew node@22)
 #   2. Generates ~/Library/LaunchAgents/com.remoteshell.agent.plist
 #   3. Loads the LaunchAgent so it starts now and on every future login
 #
 # Requirements:
 #   - macOS (Big Sur 11+ recommended)
-#   - Node.js installed and accessible in PATH
+#   - Node.js 22 LTS recommended
 #   - npm install already run inside the agent/ directory
 #   - .env file present in the agent/ directory (see .env.example)
 #
@@ -59,24 +59,43 @@ fi
 # ── Detect node binary ────────────────────────────────────────────────────────
 # launchd does not inherit the user's PATH, so we need the absolute path.
 
-NODE_BIN=""
+NODE_BIN="${NODE_BIN:-}"
 
-# 1. Whatever `node` resolves to in the current shell (covers nvm, volta, etc.)
-if command -v node &>/dev/null; then
+if [[ -n "${NODE_BIN}" ]] && [[ ! -x "${NODE_BIN}" ]]; then
+  echo "ERROR: NODE_BIN was provided but is not executable: ${NODE_BIN}" >&2
+  exit 1
+fi
+
+if [[ -n "${NODE_BIN}" ]]; then
+  echo "Using NODE_BIN override: ${NODE_BIN}"
+fi
+
+# 1. Homebrew node@22 (Apple Silicon)
+if [[ -z "${NODE_BIN}" ]] && [[ -x "/opt/homebrew/opt/node@22/bin/node" ]]; then
+  NODE_BIN="/opt/homebrew/opt/node@22/bin/node"
+fi
+
+# 2. Homebrew node@22 (Intel)
+if [[ -z "${NODE_BIN}" ]] && [[ -x "/usr/local/opt/node@22/bin/node" ]]; then
+  NODE_BIN="/usr/local/opt/node@22/bin/node"
+fi
+
+# 3. Whatever `node` resolves to in the current shell (covers nvm, volta, etc.)
+if [[ -z "${NODE_BIN}" ]] && command -v node &>/dev/null; then
   NODE_BIN="$(command -v node)"
 fi
 
-# 2. Apple Silicon Homebrew
+# 4. Apple Silicon Homebrew latest
 if [[ -z "${NODE_BIN}" ]] && [[ -x "/opt/homebrew/bin/node" ]]; then
   NODE_BIN="/opt/homebrew/bin/node"
 fi
 
-# 3. Intel Homebrew
+# 5. Intel Homebrew latest
 if [[ -z "${NODE_BIN}" ]] && [[ -x "/usr/local/bin/node" ]]; then
   NODE_BIN="/usr/local/bin/node"
 fi
 
-# 4. nvm default
+# 6. nvm default
 if [[ -z "${NODE_BIN}" ]] && [[ -x "${HOME}/.nvm/versions/node/$(ls "${HOME}/.nvm/versions/node/" 2>/dev/null | tail -1)/bin/node" ]]; then
   NODE_BIN="${HOME}/.nvm/versions/node/$(ls "${HOME}/.nvm/versions/node/" | tail -1)/bin/node"
 fi
@@ -86,7 +105,21 @@ if [[ -z "${NODE_BIN}" ]]; then
   exit 1
 fi
 
-echo "Using node:      ${NODE_BIN}  ($(${NODE_BIN} --version))"
+NODE_VERSION="$(${NODE_BIN} --version)"
+NODE_MAJOR="${NODE_VERSION#v}"
+NODE_MAJOR="${NODE_MAJOR%%.*}"
+
+if [[ "${NODE_MAJOR}" -lt 18 || "${NODE_MAJOR}" -ge 25 ]]; then
+  echo "ERROR: Unsupported Node.js version for this agent: ${NODE_VERSION}" >&2
+  echo "       Supported: >=18 and <25" >&2
+  echo "       Recommended: Node 22 LTS." >&2
+  echo "       If installed with Homebrew: brew install node@22" >&2
+  echo "       Then rerun with:" >&2
+  echo "         NODE_BIN=\$(brew --prefix node@22)/bin/node ./launchd-install.sh" >&2
+  exit 1
+fi
+
+echo "Using node:      ${NODE_BIN}  (${NODE_VERSION})"
 echo "Agent directory: ${AGENT_DIR}"
 echo "Log file:        ${LOG_FILE}"
 echo ""
